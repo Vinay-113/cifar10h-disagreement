@@ -1,3 +1,17 @@
+---
+title: CIFAR-10H Disagreement Predictor
+emoji: 🧠
+colorFrom: blue
+colorTo: green
+sdk: gradio
+python_version: 3.10
+app_file: app.py
+fullWidth: true
+header: default
+short_description: Predict full human annotator label distributions for CIFAR-10 style images.
+suggested_hardware: cpu-basic
+---
+
 # CIFAR-10H Disagreement Prediction
 
 This project trains deep neural networks to predict the full human annotator label distribution for a CIFAR-10 image using the CIFAR-10H dataset. Instead of outputting a single hard class, the model outputs a 10-dimensional distribution `q(y|x)` that approximates the empirical human distribution `p(y|x)`.
@@ -52,6 +66,57 @@ cifar10h-disagreement/
 ```bash
 pip install -r requirements.txt
 ```
+
+## Hugging Face Demo Deployment
+
+This repository now includes a Gradio app at [app.py](/Users/vinaypatil/Documents/Playground/cifar10h-disagreement/app.py) so you can deploy it as a Hugging Face Space.
+
+### What the demo needs
+
+The Space code is ready, but it still needs a trained checkpoint. The app looks for a model in this order:
+
+1. `MODEL_CHECKPOINT_PATH`
+2. `MODEL_CHECKPOINT_URL`
+3. `checkpoints/kl_cifar10_pretrained_mlp_best.pt`
+
+The simplest path is:
+
+1. Train the baseline model locally or on a GPU machine.
+2. Upload the resulting checkpoint somewhere downloadable.
+3. Set `MODEL_CHECKPOINT_URL` in your Space variables.
+
+### Recommended deployment flow
+
+1. Push this repository to GitHub.
+2. Create a new Hugging Face Space and choose the `Gradio` SDK.
+3. Upload this repository to the Space, or connect it via GitHub sync.
+4. Add a Space variable named `MODEL_CHECKPOINT_URL` that points to your trained checkpoint.
+5. Let the Space rebuild automatically.
+
+### Local demo run
+
+If you already have a trained checkpoint locally:
+
+```bash
+MODEL_CHECKPOINT_PATH=checkpoints/kl_cifar10_pretrained_mlp_best.pt python app.py
+```
+
+If your checkpoint is hosted remotely:
+
+```bash
+MODEL_CHECKPOINT_URL="https://YOUR_PUBLIC_CHECKPOINT_URL/model.pt" python app.py
+```
+
+Then open `http://127.0.0.1:7860`.
+
+### Optional GitHub to Space sync
+
+After the repo is on GitHub, you can either:
+
+- push directly to the Hugging Face Space repo, or
+- set up GitHub Actions to sync to the Space on every push
+
+See the official Hugging Face docs linked at the end of this README.
 
 ## Data
 
@@ -236,3 +301,27 @@ The evaluation pipeline computes:
 - CIFAR-10H splits are deterministic: `6000 / 2000 / 2000`.
 - All training scripts use early stopping on validation KL divergence.
 - If predictive entropy under OOD corruption does not increase with severity, `robustness/ood_corruptions.py` reports that result honestly.
+
+## Deployment Checklist
+
+Use this exact sequence if you want both GitHub and a public demo:
+
+1. `cd /Users/vinaypatil/Documents/Playground/cifar10h-disagreement`
+2. `gh auth login -h github.com`
+3. `gh repo create cifar10h-disagreement --public --source=. --remote=origin --push`
+4. Train a model and keep the checkpoint `checkpoints/kl_cifar10_pretrained_mlp_best.pt`
+5. Upload that checkpoint to a public URL or a Hugging Face model repo
+6. Create a new Hugging Face Space with `Gradio`
+7. Copy this repo into the Space or sync it from GitHub
+8. Add `MODEL_CHECKPOINT_URL` in the Space settings
+9. Wait for the automatic rebuild
+
+## Official References
+
+- [GitHub CLI auth login](https://cli.github.com/manual/gh_auth_login)
+- [GitHub CLI repo create](https://cli.github.com/manual/gh_repo_create)
+- [Add an existing project to GitHub](https://docs.github.com/en/github/importing-your-projects-to-github/adding-an-existing-project-to-github-using-the-command-line)
+- [Hugging Face Spaces overview](https://huggingface.co/docs/hub/main/en/spaces-overview)
+- [Hugging Face Spaces config reference](https://huggingface.co/docs/hub/main/spaces-config-reference)
+- [Hugging Face Gradio Spaces](https://huggingface.co/docs/hub/spaces-sdks-gradio)
+- [Hugging Face GitHub sync for Spaces](https://huggingface.co/docs/hub/main/spaces-github-actions)
