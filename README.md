@@ -4,11 +4,11 @@ emoji: 🧠
 colorFrom: blue
 colorTo: green
 sdk: gradio
-python_version: 3.10
+python_version: "3.11"
 app_file: app.py
 fullWidth: true
 header: default
-short_description: Predict full human annotator label distributions for CIFAR-10 style images.
+short_description: Predict CIFAR-10H label distributions from images.
 suggested_hardware: cpu-basic
 ---
 
