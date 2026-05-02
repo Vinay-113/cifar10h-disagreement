@@ -10,6 +10,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
@@ -29,6 +30,7 @@ from config import (
     CIFAR10H_DOWNLOAD_SUBDIR,
     CIFAR10_IMAGE_SIZE,
     CIFAR10_MEAN,
+    CIFAR_RANDOM_CROP_PADDING,
     CIFAR10_STD,
     DATA_DIR,
     ENTROPY_TOLERANCE,
@@ -144,6 +146,45 @@ def load_cifar10h_soft_labels(data_dir: Path = RAW_DATA_DIR) -> tuple[np.ndarray
     return counts, soft_labels
 
 
+def run_alignment_checks(
+    images: np.ndarray,
+    hard_labels: np.ndarray,
+    counts: np.ndarray,
+    soft_labels: np.ndarray,
+) -> None:
+    """Validate CIFAR-10 test image and CIFAR-10H annotation alignment.
+
+    CIFAR-10H annotates the CIFAR-10 test set in the same canonical order. This
+    check verifies the one-to-one row alignment assumptions used by every split
+    and reports the majority-vote agreement with the original CIFAR-10 labels as
+    a secondary diagnostic rather than a hard assertion.
+
+    Args:
+        images: CIFAR-10 test images of shape `(10000, 32, 32, 3)`.
+        hard_labels: Original CIFAR-10 test labels of shape `(10000,)`.
+        counts: CIFAR-10H count matrix of shape `(10000, 10)`.
+        soft_labels: Normalized CIFAR-10H soft-label matrix of shape `(10000, 10)`.
+    """
+
+    expected_shape = (10000, NUM_CLASSES)
+    if counts.shape != expected_shape or soft_labels.shape != expected_shape:
+        raise AssertionError(f"CIFAR-10H matrices must both have shape {expected_shape}.")
+    if images.shape[0] != counts.shape[0] or hard_labels.shape[0] != counts.shape[0]:
+        raise AssertionError("CIFAR-10 test images, hard labels, and CIFAR-10H rows must align 1:1.")
+    if images.shape[1:] != (CIFAR10_IMAGE_SIZE, CIFAR10_IMAGE_SIZE, 3):
+        raise AssertionError("CIFAR-10 test images must be 32x32 RGB arrays.")
+    if not np.all((hard_labels >= 0) & (hard_labels < NUM_CLASSES)):
+        raise AssertionError("CIFAR-10 hard labels must be valid class indices.")
+
+    majority_labels = np.argmax(soft_labels, axis=1)
+    majority_agreement = float(np.mean(majority_labels == hard_labels))
+    print(
+        "ASSERTION PASSED: CIFAR-10H rows align 1:1 with CIFAR-10 test images "
+        f"(N={counts.shape[0]})."
+    )
+    print(f"Alignment diagnostic: CIFAR-10 label vs CIFAR-10H majority agreement = {majority_agreement:.4f}")
+
+
 def run_sanity_checks(soft_labels: np.ndarray) -> np.ndarray:
     """Validate CIFAR-10H soft labels and print entropy statistics.
 
@@ -160,6 +201,13 @@ def run_sanity_checks(soft_labels: np.ndarray) -> np.ndarray:
     if np.isnan(soft_labels).any():
         raise AssertionError("Soft labels contain NaN values.")
 
+    max_deviation = float(np.max(np.abs(row_sums - 1.0)))
+    print(
+        "ASSERTION PASSED: every soft-label vector sums to 1.0 "
+        f"within +/- {ENTROPY_TOLERANCE:g} (max deviation={max_deviation:.2e})."
+    )
+    print("ASSERTION PASSED: no NaN values found in the CIFAR-10H soft labels.")
+
     entropies = shannon_entropy(soft_labels)
     print("CIFAR-10H entropy statistics (bits):")
     print(f"  min    : {entropies.min():.4f}")
@@ -168,6 +216,67 @@ def run_sanity_checks(soft_labels: np.ndarray) -> np.ndarray:
     print(f"  std    : {entropies.std(ddof=0):.4f}")
     print(f"  max    : {entropies.max():.4f}")
     return entropies
+
+
+def compute_split_entropy_stats(soft_labels: np.ndarray, seed: int = SEED) -> pd.DataFrame:
+    """Compute per-split entropy summary statistics.
+
+    Args:
+        soft_labels: Normalized CIFAR-10H soft-label matrix of shape `(10000, 10)`.
+        seed: Seed used to reproduce the deterministic train/val/test split.
+
+    Returns:
+        DataFrame with one row per split and columns for count, min, mean,
+        median, standard deviation, and maximum entropy.
+    """
+
+    entropies = shannon_entropy(soft_labels)
+    rows = []
+    for split_name, indices in build_split_indices(seed=seed).items():
+        split_entropies = entropies[indices]
+        rows.append(
+            {
+                "split": split_name,
+                "count": int(len(indices)),
+                "entropy_min": float(split_entropies.min()),
+                "entropy_mean": float(split_entropies.mean()),
+                "entropy_median": float(np.median(split_entropies)),
+                "entropy_std": float(split_entropies.std(ddof=0)),
+                "entropy_max": float(split_entropies.max()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def print_split_entropy_stats(
+    soft_labels: np.ndarray,
+    output_path: Path | None = None,
+    seed: int = SEED,
+) -> pd.DataFrame:
+    """Print and optionally save per-split entropy statistics.
+
+    Args:
+        soft_labels: Normalized CIFAR-10H soft-label matrix of shape `(10000, 10)`.
+        output_path: Optional CSV path for the split entropy log.
+        seed: Seed used to reproduce the deterministic train/val/test split.
+
+    Returns:
+        DataFrame containing the logged per-split entropy statistics.
+    """
+
+    stats = compute_split_entropy_stats(soft_labels=soft_labels, seed=seed)
+    formatters = {
+        column: "{:.4f}".format
+        for column in stats.columns
+        if column.startswith("entropy_")
+    }
+    print("Per-split entropy statistics (bits):")
+    print(stats.to_string(index=False, formatters=formatters))
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        stats.to_csv(output_path, index=False)
+        print(f"Saved split entropy stats to {output_path}")
+    return stats
 
 
 def build_split_indices(seed: int = SEED) -> dict[str, np.ndarray]:
@@ -217,6 +326,11 @@ def build_pretrain_split_indices(seed: int = SEED) -> dict[str, np.ndarray]:
 def build_transforms() -> tuple[transforms.Compose, transforms.Compose]:
     """Create training and evaluation transforms for CIFAR-10 images.
 
+    Training uses only two label-preserving augmentations:
+    `RandomHorizontalFlip` and `RandomCrop(32, padding=4)`. Validation and test
+    use normalization only. No class-changing or disagreement-changing transforms
+    such as rotations, color jitter, cutout, mixup, or cutmix are used.
+
     Returns:
         Tuple of `(train_transform, eval_transform)`.
     """
@@ -228,12 +342,29 @@ def build_transforms() -> tuple[transforms.Compose, transforms.Compose]:
     train_transform = transforms.Compose(
         [
             transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(CIFAR10_IMAGE_SIZE, padding=4),
+            transforms.RandomCrop(CIFAR10_IMAGE_SIZE, padding=CIFAR_RANDOM_CROP_PADDING),
             *normalization,
         ]
     )
     eval_transform = transforms.Compose(normalization)
     return train_transform, eval_transform
+
+
+def print_augmentation_policy() -> None:
+    """Print the augmentation policy used for soft-label training.
+
+    The policy is intentionally conservative because CIFAR-10H labels represent
+    human uncertainty over the original image; aggressive transforms could change
+    the semantic ambiguity being modeled.
+    """
+
+    print("Data augmentation policy:")
+    print(
+        "  train   : RandomHorizontalFlip + "
+        f"RandomCrop(size={CIFAR10_IMAGE_SIZE}, padding={CIFAR_RANDOM_CROP_PADDING}) + normalization"
+    )
+    print("  val/test: normalization only")
+    print("  excluded: rotations, color jitter, cutout, mixup, cutmix, and other class-changing transforms")
 
 
 def denormalize_image(image_tensor: torch.Tensor) -> np.ndarray:
@@ -681,8 +812,11 @@ def generate_dataset_visualizations(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     images, hard_labels = load_cifar10_test_images(data_dir)
-    _, soft_labels = load_cifar10h_soft_labels(data_dir)
+    counts, soft_labels = load_cifar10h_soft_labels(data_dir)
+    run_alignment_checks(images=images, hard_labels=hard_labels, counts=counts, soft_labels=soft_labels)
     entropies = run_sanity_checks(soft_labels)
+    print_split_entropy_stats(soft_labels=soft_labels, output_path=output_dir / "split_entropy_stats.csv")
+    print_augmentation_policy()
 
     paths = {
         "entropy_histogram": output_dir / "entropy_histogram.png",

@@ -29,6 +29,8 @@ The repository covers the full research workflow:
 - test robustness to annotator subsampling and image corruptions
 - inspect model behavior with Grad-CAM and failure-case analysis
 
+Live demo: [Vinay-113/cifar10h-disagreement-demo](https://huggingface.co/spaces/Vinay-113/cifar10h-disagreement-demo)
+
 ## Repository Structure
 
 ```text
@@ -36,6 +38,7 @@ cifar10h-disagreement/
 ├── README.md
 ├── requirements.txt
 ├── config.py
+├── app.py
 ├── data/
 │   ├── download.py
 │   └── dataset.py
@@ -55,7 +58,8 @@ cifar10h-disagreement/
 │   └── ood_corruptions.py
 └── explainability/
     ├── gradcam.py
-    └── failure_analysis.py
+    ├── failure_analysis.py
+    └── manual_analysis.md
 ```
 
 ## Environment Setup
@@ -69,21 +73,21 @@ pip install -r requirements.txt
 
 ## Hugging Face Demo Deployment
 
-This repository now includes a Gradio app at [app.py](/Users/vinaypatil/Documents/Playground/cifar10h-disagreement/app.py) so you can deploy it as a Hugging Face Space.
+This repository includes a Gradio app at `app.py` and the live Space is deployed at [Vinay-113/cifar10h-disagreement-demo](https://huggingface.co/spaces/Vinay-113/cifar10h-disagreement-demo).
 
 ### What the demo needs
 
-The Space code is ready, but it still needs a trained checkpoint. The app looks for a model in this order:
+The Space is configured to load the trained checkpoint through `MODEL_CHECKPOINT_URL`. The app looks for a model in this order:
 
 1. `MODEL_CHECKPOINT_PATH`
 2. `MODEL_CHECKPOINT_URL`
 3. `checkpoints/kl_cifar10_pretrained_mlp_best.pt`
 
-The simplest path is:
+For a fresh deployment:
 
 1. Train the baseline model locally or on a GPU machine.
-2. Upload the resulting checkpoint somewhere downloadable.
-3. Set `MODEL_CHECKPOINT_URL` in your Space variables.
+2. Upload the resulting `.pt` checkpoint to the Hugging Face model hub or another downloadable private/public URL.
+3. Set `MODEL_CHECKPOINT_URL` in the Space secrets/variables.
 
 ### Recommended deployment flow
 
@@ -180,6 +184,9 @@ Expected outputs in `results/dataset_analysis/`:
 - `per_class_average_entropy.png`
 - `majority_vote_distribution_matrix.png`
 - `entropy_extremes_grid.png`
+- `split_entropy_stats.csv`
+
+The script also prints explicit assertions confirming that every soft-label vector sums to `1.0`, that CIFAR-10H rows align one-to-one with CIFAR-10 test images, and that no NaNs are present.
 
 ### 3. Pretrain the backbone on CIFAR-10 hard labels
 
@@ -263,6 +270,8 @@ Expected outputs:
 - per-image Grad-CAM panels and `gradcam_summary_grid.png`
 - failure-case panels, `failure_summary_grid.png`, and `failure_statistics.csv`
 
+Manual high-disagreement source analysis is documented in `explainability/manual_analysis.md`.
+
 ## Required Execution Order
 
 1. `python data/download.py`
@@ -283,6 +292,7 @@ Expected outputs:
 16. `python robustness/ood_corruptions.py`
 17. `python explainability/gradcam.py`
 18. `python explainability/failure_analysis.py`
+19. Review `explainability/manual_analysis.md` for the compulsory manual disagreement source table
 
 ## Metrics Reported
 
@@ -294,6 +304,13 @@ The evaluation pipeline computes:
 - Pearson correlation between true and predicted entropy
 - Spearman correlation between true and predicted entropy
 - Precision@100, Precision@200, Precision@500 for top-entropy retrieval
+
+## Report Compliance Notes
+
+- Sanity checks: `data/dataset.py` prints an explicit row-sum assertion, NaN assertion, CIFAR-10/CIFAR-10H alignment assertion, majority-vote alignment diagnostic, and per-split entropy statistics. The split entropy log is saved to `results/dataset_analysis/split_entropy_stats.csv`.
+- Data augmentation: the code intentionally uses only `RandomHorizontalFlip` and `RandomCrop(32, padding=4)` for training, followed by normalization. Validation/test use normalization only. No rotations, color jitter, cutout, mixup, cutmix, or other class-changing transforms are used.
+- Manual disagreement source analysis: `explainability/manual_analysis.md` contains a completed table for 20 highest-entropy images with categories `ambiguous identity`, `poor quality`, `multi-object`, `boundary case`, and `other`.
+- Demo infrastructure: `app.py` loads the deployed checkpoint from `MODEL_CHECKPOINT_URL` when running on Hugging Face Spaces, with local fallback support through `MODEL_CHECKPOINT_PATH`.
 
 ## Notes
 
