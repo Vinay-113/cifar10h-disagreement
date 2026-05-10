@@ -31,6 +31,8 @@ The repository covers the full research workflow:
 
 Live demo: [Vinay-113/cifar10h-disagreement-demo](https://huggingface.co/spaces/Vinay-113/cifar10h-disagreement-demo)
 
+Colab notebook: [CIFAR-10H training and evaluation notebook](https://colab.research.google.com/drive/1I3Tuv0PrG2R5fHT7F3ZSWW8BS6P6Jjri)
+
 ## Repository Structure
 
 ```text
@@ -49,6 +51,9 @@ cifar10h-disagreement/
 │   └── losses.py
 ├── train.py
 ├── evaluate.py
+├── report/
+│   ├── cifar10h_report_final.docx
+│   └── cifar10h_report_final.pdf
 ├── ablations/
 │   ├── run_backbone_init.py
 │   ├── run_loss_comparison.py
